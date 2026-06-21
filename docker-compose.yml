@@ -1,11 +1,61 @@
-version: '3.8'
-
 services:
   aigc-server:
     build: .
     container_name: aigc-core-server
-    restart: always
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    # 生产环境配置：使用独立的环境变量文件
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+    # 日志和数据持久化
+    volumes:
+      - ./logs:/var/log/aigc-server
+      - ./data:/app/data
+    # 网络配置
+    networks:
+      - aigc-network
+    # 资源限制（阿里云可根据实例规格调整）
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Nginx 反向代理（可选，如已有 Nginx 可注释掉此服务）
+  nginx:
+    image: nginx:alpine
+    container_name: aigc-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/cert:/etc/nginx/cert:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - aigc-server
+    networks:
+      - aigc-network
+
+networks:
+  aigc-network:
+    driver: bridge
+
+volumes:
+  aigc-logs:

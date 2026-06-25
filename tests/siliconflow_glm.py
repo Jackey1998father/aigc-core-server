@@ -13,9 +13,9 @@ from pydantic import SecretStr
 API_KEY = os.getenv("SILICONFLOW_API_KEY", "sk-lbaejguljpqjckzkqtaybqnjxzzjizfqyijkxfwatbxrglnv")
 
 # 本地代理地址
-BASE_URL = "http://localhost:8000/siliconflow/v1"
+BASE_URL = "http://106.14.181.222:8000/siliconflow/v1"
 
-MODEL = "Pro/zai-org/GLM-5.1"
+MODEL = "zai-org/GLM-5.2"
 
 
 def create_llm(streaming: bool = False) -> ChatOpenAI:

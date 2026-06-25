@@ -35,9 +35,24 @@ class Settings(BaseSettings):
 
     # ===== 上游模型服务配置 =====
     SILICON_FLOW_URL: str = "https://api.siliconflow.cn/v1/chat/completions"
+    SILICON_FLOW_EMBEDDING_URL: str = "https://api.siliconflow.cn/v1/embeddings"
+    SILICON_FLOW_RERANK_URL: str = "https://api.siliconflow.cn/v1/rerank"
     DEFAULT_MODEL: str = "Pro/zai-org/GLM-5.1"
+    DEFAULT_EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    DEFAULT_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
     # 如需要固定 API Key（不依赖请求头传入），可在这里配置
     SILICON_FLOW_API_KEY: str = ""
+
+    # ===== Milvus 配置 =====
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
+    MILVUS_COLLECTION_NAME: str = "documents"
+    MILVUS_USER: str = ""
+    MILVUS_PASSWORD: str = ""
+
+    # ===== 服务配置 =====
+    # 本服务的 base URL，用于内部服务调用
+    SERVER_BASE_URL: str = "http://106.14.181.222:8000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -7,10 +7,11 @@ import json
 import time
 import uuid
 import requests
+import httpx
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.services.silicon_flow_service import SILICON_FLOW_URL, DEFAULT_MODEL
+from app.core.config import settings
 
 silicon_router = APIRouter(prefix="/siliconflow")
 
@@ -55,12 +56,12 @@ async def siliconflow_proxy(request: Request):
     }
 
     stream = body.get("stream", False)
-    model = body.get("model", DEFAULT_MODEL)
+    model = body.get("model", settings.DEFAULT_MODEL)
 
     # ---------------- 非流式 ----------------
     if not stream:
         resp = requests.post(
-            SILICON_FLOW_URL,
+            settings.SILICON_FLOW_URL,
             headers=headers,
             json=body,
             timeout=120
@@ -81,7 +82,7 @@ async def siliconflow_proxy(request: Request):
         yield f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n"
 
         resp = requests.post(
-            SILICON_FLOW_URL,
+            settings.SILICON_FLOW_URL,
             headers=headers,
             json=body,
             stream=True
@@ -150,3 +151,130 @@ async def siliconflow_proxy(request: Request):
             "Connection": "keep-alive"
         }
     )
+
+
+@silicon_router.post("/v1/embeddings")
+async def create_embedding(request: Request):
+    """
+    创建文本嵌入向量
+    
+    调用 SiliconFlow 的嵌入模型服务，格式兼容 OpenAI Embeddings API
+    
+    请求体格式：
+    {
+        "input": "Hello, world!",
+        "model": "BAAI/bge-m3"
+    }
+    
+    返回格式：
+    {
+        "object": "list",
+        "model": "BAAI/bge-m3",
+        "data": [
+            {
+                "object": "embedding",
+                "embedding": [...],
+                "index": 0
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 5,
+            "total_tokens": 5
+        }
+    }
+    """
+    body = await request.json()
+    
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json"
+    }
+    
+    model = body.get("model", settings.DEFAULT_EMBEDDING_MODEL)
+    
+    payload = {
+        "input": body.get("input", ""),
+        "model": model
+    }
+    
+    resp = requests.post(
+        settings.SILICON_FLOW_EMBEDDING_URL,
+        headers=headers,
+        json=payload,
+        timeout=60
+    )
+    
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    
+    return resp.json()
+
+
+@silicon_router.post("/v1/rerank")
+async def rerank(request: Request):
+    """
+    Rerank 重排序接口
+    
+    调用 SiliconFlow 的 Rerank 模型服务，对召回的文档进行重排序
+    
+    请求体格式：
+    {
+        "model": "BAAI/bge-reranker-v2-m3",
+        "query": "Apple",
+        "documents": ["apple", "banana", "fruit", "vegetable"],
+        "return_documents": true,
+        "top_n": 4
+    }
+    
+    返回格式：
+    {
+        "results": [
+            {
+                "index": 0,
+                "document": "apple",
+                "score": 0.99
+            }
+        ]
+    }
+    """
+    body = await request.json()
+    
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json"
+    }
+    
+    model = body.get("model", settings.DEFAULT_RERANK_MODEL)
+    
+    payload = {
+        "model": model,
+        "query": body.get("query", ""),
+        "return_documents": body.get("return_documents", True),
+        "top_n": body.get("top_n", 4)
+    }
+    
+    documents = body.get("documents", [])
+    if documents and isinstance(documents[0], dict):
+        payload["documents"] = [doc.get("text", "") for doc in documents]
+    else:
+        payload["documents"] = documents
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            settings.SILICON_FLOW_RERANK_URL,
+            headers=headers,
+            json=payload,
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+    return resp.json()

@@ -8,8 +8,11 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # 先复制依赖文件（利用 Docker 缓存层）
 COPY requirements.txt .
 
-# 安装依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install \
+    -i https://mirrors.aliyun.com/pypi/simple \
+    --trusted-host mirrors.aliyun.com \
+    --no-cache-dir \
+    -r requirements.txt
 
 # 复制应用代码
 COPY . .

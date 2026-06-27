@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     messages = [
         {"role": "system", "content": "你是锦点餐饮公司的RAG的回答助手"},
-        {"role": "user", "content": "你好，请介绍一下你自己"}
+        {"role": "user", "content": "请详细介绍一下你自己"}
     ]
 
     print("回复: ", end="", flush=True)

@@ -7,7 +7,7 @@ services:
       - "8000:8000"
     # 生产环境配置：使用独立的环境变量文件
     env_file:
-      - .env
+      - .env.production
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai

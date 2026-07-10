@@ -9,6 +9,7 @@ services:
     env_file:
       - .env.production
     environment:
+      - APP_ENV=production
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
     # 日志和数据持久化

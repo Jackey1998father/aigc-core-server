@@ -37,6 +37,36 @@ class ChatRequest(BaseModel):
     )
 
 
+class ChatV2Request(BaseModel):
+    """对话请求 V2（基于 DB 会话管理）
+
+    前端只传 conversation_id + 当前消息，后端自动从 DB 拉历史。
+    """
+    conversation_id: str = Field(
+        ...,
+        description="会话 ID",
+    )
+    message: str = Field(
+        ...,
+        description="当前用户消息",
+        min_length=1,
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="模型名称，不传则使用默认模型",
+    )
+    max_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="从 DB 取最近 N 轮历史作为上下文",
+    )
+    thinking: bool = Field(
+        default=False,
+        description="是否开启深度思考模式（传给上游 LLM）",
+    )
+
+
 class ChatResponse(BaseModel):
     """非流式对话响应"""
     code: int = 0

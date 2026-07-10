@@ -2,17 +2,18 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# 安装 Poetry
+RUN pip install --no-cache-dir poetry
+
 # 创建非 root 用户，提高安全性
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # 先复制依赖文件（利用 Docker 缓存层）
-COPY requirements.txt .
+COPY pyproject.toml poetry.lock ./
 
-RUN pip install \
-    -i https://mirrors.aliyun.com/pypi/simple \
-    --trusted-host mirrors.aliyun.com \
-    --no-cache-dir \
-    -r requirements.txt
+# 安装生产依赖（不在容器内创建虚拟环境，直接用系统 Python）
+RUN poetry config virtualenvs.create false && \
+    poetry install --only main --no-interaction --no-ansi --no-root
 
 # 复制应用代码
 COPY . .
@@ -28,5 +29,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')" || exit 1
 
-# 生产环境启动（关闭 reload）
+# 生产环境启动
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

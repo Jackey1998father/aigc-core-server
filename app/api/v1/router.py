@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.schemas.demo import DemoResponse, DemoRequest
@@ -11,10 +11,19 @@ from app.schemas.conversation import (
     DeleteResponse,
     MessageListResponse,
 )
+from app.schemas.kb import (
+    KnowledgeBaseCreateRequest,
+    KnowledgeBaseUpdateRequest,
+    KnowledgeBaseListResponse,
+    KnowledgeBaseDetailResponse,
+)
+from app.schemas.document import DocumentListResponse, DocumentDetailResponse
 from app.services.demo_service import DemoService
 from app.services.chat_service import chat_v2_stream
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService, MessageService
+from app.services.kb_service import KnowledgeBaseService
+from app.services.document_service import DocumentService
 from app.utils.auth_deps import get_current_user
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -57,9 +66,14 @@ def login(req: LoginRequest):
 # ==================== 对话接口（V2 - 基于 DB 会话管理） ====================
 
 SYSTEM_PROMPT = (
-    "你是锦点餐饮公司的智能回答助手。"
-    "请严格根据用户的最新一条消息回答，不要重复之前已经说过的内容，也不要被历史话题带偏；"
-    "如果用户的问题与餐饮无关，先简单回应用户的问题，再自然引导回锦点餐饮相关话题。"
+    "你是锦点餐饮管理有限公司的智能助手，专门为公司员工、客户及合作伙伴提供专业、高效的业务咨询服务。"
+    "你的主要职责是帮助用户解决与团餐运营、中央厨房管理、餐饮供应链、菜品管理、食品安全、采购配送、客户服务、企业制度等相关的问题。"
+    "回答用户问题时，请优先依据公司提供的知识库、业务资料和制度文件进行准确回答；"
+    "你需要结合当前对话上下文理解用户意图，但始终以用户最新一条消息为核心，不要机械重复之前已经回答过的内容。"
+    "如果用户的问题存在指代不清、信息不足的情况，可以结合历史上下文进行合理推断；"
+    "如果仍无法确定，应主动向用户询问必要的信息。"
+    "如果用户咨询与锦点餐饮业务无关的问题，请先友好回应用户，再自然引导到锦点餐饮相关服务或业务方向。"
+    "回答风格要求：专业、简洁、易懂，像一名熟悉公司业务的内部智能顾问，而不是普通聊天机器人。"
 )
 
 
@@ -161,3 +175,145 @@ def get_messages(
     """获取指定会话的所有消息（按时间升序）"""
     messages = MessageService.get_by_conversation(conversation_id, user_id, limit=200)
     return MessageListResponse(data=messages).model_dump()
+
+
+# ==================== 知识库管理接口 ====================
+
+@v1_router.post("/knowledge-bases")
+def create_kb(
+    req: KnowledgeBaseCreateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """创建知识库"""
+    item = KnowledgeBaseService.create(user_id, req.name, req.description)
+    return KnowledgeBaseDetailResponse(data=item).model_dump()
+
+
+@v1_router.get("/knowledge-bases")
+def list_kb(user_id: str = Depends(get_current_user)):
+    """获取当前用户的所有知识库列表"""
+    items = KnowledgeBaseService.list_by_user(user_id)
+    return KnowledgeBaseListResponse(data=items).model_dump()
+
+
+@v1_router.get("/knowledge-bases/{kb_id}")
+def get_kb(
+    kb_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """获取单个知识库详情"""
+    item = KnowledgeBaseService.get_by_id(kb_id, user_id)
+    if not item:
+        return JSONResponse(
+            content={"code": 1, "message": "知识库不存在或无权访问"},
+            status_code=404,
+        )
+    return KnowledgeBaseDetailResponse(data=item).model_dump()
+
+
+@v1_router.put("/knowledge-bases/{kb_id}")
+def update_kb(
+    kb_id: str,
+    req: KnowledgeBaseUpdateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """更新知识库名称/描述"""
+    ok = KnowledgeBaseService.update(kb_id, user_id, req.name, req.description)
+    if not ok:
+        return JSONResponse(
+            content={"code": 1, "message": "知识库不存在或无权操作"},
+            status_code=404,
+        )
+    # 返回更新后的数据
+    item = KnowledgeBaseService.get_by_id(kb_id, user_id)
+    return KnowledgeBaseDetailResponse(data=item).model_dump()
+
+
+@v1_router.delete("/knowledge-bases/{kb_id}")
+def delete_kb(
+    kb_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """删除知识库（软删除，同时软删除其下所有文档）"""
+    ok = KnowledgeBaseService.delete(kb_id, user_id)
+    if not ok:
+        return JSONResponse(
+            content={"code": 1, "message": "知识库不存在或无权操作"},
+            status_code=404,
+        )
+    return DeleteResponse().model_dump()
+
+
+# ==================== 文档管理接口 ====================
+
+@v1_router.post("/knowledge-bases/{kb_id}/documents")
+def upload_document(
+    kb_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user),
+):
+    """
+    上传文档到指定知识库。
+
+    支持格式：pdf, txt, ppt, pptx, doc, docx, csv, xlsx
+    文件先存储到 RustFS，再写入 DB，parse_status=0 等待后续 MinerU 解析。
+    """
+    try:
+        item = DocumentService.upload(kb_id, user_id, file)
+        return DocumentDetailResponse(data=item).model_dump()
+    except ValueError as e:
+        return JSONResponse(
+            content={"code": 1, "message": str(e)},
+            status_code=400,
+        )
+    except RuntimeError as e:
+        return JSONResponse(
+            content={"code": 1, "message": str(e)},
+            status_code=500,
+        )
+    except Exception as e:
+        logger.exception("[upload_document] 未知错误 kb_id=%s file=%s", kb_id, file.filename)
+        return JSONResponse(
+            content={"code": 1, "message": f"上传失败：{e}"},
+            status_code=500,
+        )
+
+
+@v1_router.get("/knowledge-bases/{kb_id}/documents")
+def list_documents(
+    kb_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """获取知识库下的文档列表"""
+    items = DocumentService.list_by_kb(kb_id, user_id)
+    return DocumentListResponse(data=items).model_dump()
+
+
+@v1_router.get("/documents/{doc_id}")
+def get_document(
+    doc_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """获取单个文档详情（含 content_text）"""
+    item = DocumentService.get_by_id(doc_id, user_id)
+    if not item:
+        return JSONResponse(
+            content={"code": 1, "message": "文档不存在或无权访问"},
+            status_code=404,
+        )
+    return DocumentDetailResponse(data=item).model_dump()
+
+
+@v1_router.delete("/documents/{doc_id}")
+def delete_document(
+    doc_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """删除文档（软删除 + 从 RustFS 删除文件）"""
+    ok = DocumentService.delete(doc_id, user_id)
+    if not ok:
+        return JSONResponse(
+            content={"code": 1, "message": "文档不存在或无权操作"},
+            status_code=404,
+        )
+    return DeleteResponse().model_dump()

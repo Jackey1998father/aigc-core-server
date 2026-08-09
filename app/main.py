@@ -23,11 +23,32 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
 
+    # Celery 健康检查
+    @app.get("/api/v1/celery-health")
+    def celery_health():
+        try:
+            from app.celery_app import celery_app
+            ping = celery_app.control.ping(timeout=2)
+            workers_online = len(ping) > 0
+            return {
+                "code": 0,
+                "message": "success" if workers_online else "no workers",
+                "data": {
+                    "workers": len(ping),
+                    "online": workers_online,
+                },
+            }
+        except Exception as e:
+            return {
+                "code": 1,
+                "message": f"Celery 不可用: {e}",
+                "data": None,
+            }
+
     return app
 
 
 app = create_app()
-
 
 
 if __name__ == "__main__":
@@ -35,6 +56,5 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )
- 

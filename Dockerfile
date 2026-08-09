@@ -18,6 +18,10 @@ RUN poetry config virtualenvs.create false && \
 # 复制应用代码
 COPY . .
 
+# 复制入口脚本
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # 切换到非 root 用户
 RUN chown -R appuser:appuser /app
 USER appuser
@@ -25,9 +29,10 @@ USER appuser
 # 暴露端口
 EXPOSE 8000
 
-# 健康检查
+# 健康检查（仅 API 服务有效，Worker 需自定义）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')" || exit 1
 
-# 生产环境启动
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 统一入口，通过 command 区分服务类型
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["api"]

@@ -50,16 +50,26 @@ class Settings(BaseSettings):
     SILICON_FLOW_URL: str = "https://api.siliconflow.cn/v1/chat/completions"
     SILICON_FLOW_EMBEDDING_URL: str = "https://api.siliconflow.cn/v1/embeddings"
     SILICON_FLOW_RERANK_URL: str = "https://api.siliconflow.cn/v1/rerank"
-    DEFAULT_MODEL: str = "zai-org/GLM-5.2"
+    DEFAULT_MODEL: str = "deepseek-ai/DeepSeek-V4-Flash"
+    DEFAULT_MAX_TOKENS: int = 8192  # LLM 最大输出 token 数（思考模式下推理 token 也从中扣除）
     DEFAULT_EMBEDDING_MODEL: str = "BAAI/bge-m3"
     DEFAULT_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
     # 如需要固定 API Key（不依赖请求头传入），可在这里配置
     SILICON_FLOW_API_KEY: str = "sk-lbaejguljpqjckzkqtaybqnjxzzjizfqyijkxfwatbxrglnv"
 
     # ===== Milvus 配置 =====
-    MILVUS_HOST: str = "localhost"
+    MILVUS_HOST: str = "106.14.181.222"
     MILVUS_PORT: int = 19530
-    MILVUS_COLLECTION_NAME: str = "documents"
+    MILVUS_DB_NAME: str = "aigc_rag_milvus"
+    MILVUS_URI: str = f"http://{MILVUS_HOST}:{MILVUS_PORT}"
+    MILVUS_TOKEN: str = ""
+    # 三个 collection（parent / child 纯文本 / child 带向量）
+    MILVUS_PARENT_COLLECTION: str = "aigc_parent_docs"
+    MILVUS_CHILD_COLLECTION: str = "aigc_child_docs"
+    MILVUS_BGE_COLLECTION: str = "aigc_docs_bge"
+    # BGE 向量维度（需与 embedding 模型一致）
+    MILVUS_BGE_DIM: int = 1024
+    # 用户名密码（占位，当前用无认证模式）
     MILVUS_USER: str = ""
     MILVUS_PASSWORD: str = ""
 
@@ -67,12 +77,32 @@ class Settings(BaseSettings):
     # 本服务的 base URL，用于内部服务调用
     SERVER_BASE_URL: str = "http://106.14.181.222:8000"
 
+    # ===== RustFS / MinIO 配置（S3 兼容对象存储）=====
+    RUSTFS_ADDRESS: str = "106.14.181.222"
+    RUSTFS_PORT: int = 9000
+    RUSTFS_ACCESS_KEY_ID: str = "rustfsadmin"
+    RUSTFS_SECRET_ACCESS_KEY: str = "rustfsadmin"
+    RUSTFS_USE_SSL: bool = False
+    RUSTFS_BUCKET_NAME: str = "agent-user-files"
+    RUSTFS_ROOT_PATH: str = "files"
+    RUSTFS_REGION: str = "us-east-1"
+
     # ===== MySQL 配置 =====
     MYSQL_HOST: str = ""
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = ""
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = ""
+
+    # ===== Redis / Celery 配置 =====
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str = ""
+
+    # ===== 文档解析配置 =====
+    # 轻量解析直接在 Worker 进程里完成，不需要外部服务
+    # 如需启用 PaddleOCR（扫描件/图片），见 app/tasks/__init__.py
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

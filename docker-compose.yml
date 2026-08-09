@@ -1,25 +1,23 @@
 services:
-  aigc-server:
+  # ==================== FastAPI 服务 ====================
+  api:
     build: .
-    container_name: aigc-core-server
+    container_name: aigc-api
     restart: unless-stopped
+    command: ["api"]
     ports:
       - "8000:8000"
-    # 生产环境配置：使用独立的环境变量文件
     env_file:
       - .env.production
     environment:
       - APP_ENV=production
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
-    # 日志和数据持久化
     volumes:
       - ./logs:/var/log/aigc-server
       - ./data:/app/data
-    # 网络配置
     networks:
       - aigc-network
-    # 资源限制（阿里云可根据实例规格调整）
     deploy:
       resources:
         limits:
@@ -28,7 +26,6 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    # 健康检查
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
       interval: 30s
@@ -36,7 +33,59 @@ services:
       retries: 3
       start_period: 15s
 
-  # Nginx 反向代理（可选，需要时取消注释，并配置 Docker 镜像源）
+  # ==================== Celery 文档解析 Worker ====================
+  parse-worker:
+    build: .
+    container_name: aigc-parse-worker
+    restart: unless-stopped
+    command: ["parse-worker"]
+    env_file:
+      - .env.production
+    environment:
+      - APP_ENV=production
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./logs:/var/log/aigc-server
+      - ./data:/app/data
+    networks:
+      - aigc-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==================== Celery 向量化 Worker ====================
+  embed-worker:
+    build: .
+    container_name: aigc-embed-worker
+    restart: unless-stopped
+    command: ["embed-worker"]
+    env_file:
+      - .env.production
+    environment:
+      - APP_ENV=production
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./logs:/var/log/aigc-server
+      - ./data:/app/data
+    networks:
+      - aigc-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ==================== Nginx（可选，前端部署用）====================
   # nginx:
   #   image: nginx:alpine
   #   container_name: aigc-nginx
@@ -50,7 +99,7 @@ services:
   #     - ./nginx/cert:/etc/nginx/cert:ro
   #     - ./logs/nginx:/var/log/nginx
   #   depends_on:
-  #     - aigc-server
+  #     - api
   #   networks:
   #     - aigc-network
 

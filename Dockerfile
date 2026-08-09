@@ -2,17 +2,22 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# pip 清华源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 安装 Poetry
 RUN pip install --no-cache-dir poetry
 
-# 创建非 root 用户，提高安全性
+# 创建非 root 用户
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # 先复制依赖文件（利用 Docker 缓存层）
 COPY pyproject.toml poetry.lock ./
 
-# 安装生产依赖（不在容器内创建虚拟环境，直接用系统 Python）
+# Poetry 也走清华源，不创建虚拟环境
 RUN poetry config virtualenvs.create false && \
+    poetry source add --priority=primary tsinghua https://pypi.tuna.tsinghua.edu.cn/simple && \
+    poetry source remove default || true && \
     poetry install --only main --no-interaction --no-ansi --no-root
 
 # 复制应用代码
@@ -26,13 +31,10 @@ RUN chmod +x /entrypoint.sh
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# 暴露端口
 EXPOSE 8000
 
-# 健康检查（仅 API 服务有效，Worker 需自定义）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')" || exit 1
 
-# 统一入口，通过 command 区分服务类型
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["api"]

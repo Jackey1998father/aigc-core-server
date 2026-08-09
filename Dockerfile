@@ -12,13 +12,15 @@ RUN pip install --no-cache-dir poetry
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # 先复制依赖文件（利用 Docker 缓存层）
-COPY pyproject.toml ./
+COPY pyproject.toml poetry.lock* ./
 
-# Poetry 也走清华源，不创建虚拟环境（--no-lock 跳过锁文件，直接解析依赖）
+# Poetry 也走清华源，不创建虚拟环境
+# poetry lock 每次重新解析——因为 lock 文件可能跟 pyproject.toml 不同步
 RUN poetry config virtualenvs.create false && \
     poetry source add --priority=primary tsinghua https://pypi.tuna.tsinghua.edu.cn/simple && \
     poetry source remove default || true && \
-    poetry install --only main --no-interaction --no-ansi --no-root --no-lock
+    poetry lock && \
+    poetry install --only main --no-interaction --no-ansi --no-root
 
 # 复制应用代码
 COPY . .

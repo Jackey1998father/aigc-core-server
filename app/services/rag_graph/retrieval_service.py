@@ -1,5 +1,5 @@
 """
-检索节点（节点 2，仅增强模式）
+检索节点（节点 2）
 
 职责：把 kb_ids + query 转成最终发给 LLM 的 context 文本
     1. kb_ids → doc_ids（MySQL）

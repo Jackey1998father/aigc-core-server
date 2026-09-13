@@ -13,6 +13,8 @@ services:
       - APP_ENV=production
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
+      # API Key 从宿主机环境变量注入，避免明文写入仓库
+      - SILICON_FLOW_API_KEY=${SILICON_FLOW_API_KEY:-}
     volumes:
       - ./logs:/var/log/aigc-server
       - ./data:/app/data
@@ -45,6 +47,7 @@ services:
       - APP_ENV=production
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
+      - SILICON_FLOW_API_KEY=${SILICON_FLOW_API_KEY:-}
     volumes:
       - ./logs:/var/log/aigc-server
       - ./data:/app/data
@@ -71,6 +74,7 @@ services:
       - APP_ENV=production
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
+      - SILICON_FLOW_API_KEY=${SILICON_FLOW_API_KEY:-}
     volumes:
       - ./logs:/var/log/aigc-server
       - ./data:/app/data

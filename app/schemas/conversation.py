@@ -45,6 +45,7 @@ class MessageItem(BaseModel):
     id: str
     role: str
     content: str
+    reasoning: Optional[str] = None
     created_at: datetime
 
 

@@ -62,19 +62,25 @@ class ConversationService:
     @staticmethod
     def ensure_exists(conv_id: str, user_id: str, title: str = "新对话") -> str:
         """
-        确保会话存在：存在且属于当前用户则直接返回 ID，
-        不存在则自动创建并返回新 ID。
+        确保会话存在：存在且属于当前用户则直接返回 ID；
+        不存在则以传入的 conv_id 创建（保证返回的 ID 真实存在）；
+        存在但属于其他用户时抛 PermissionError（防止越权写入他人会话）。
         """
-        with get_cursor() as cursor:
+        with get_cursor(commit=True) as cursor:
             cursor.execute(
-                "SELECT id FROM tj_conversations WHERE id = %s AND user_id = %s",
-                (conv_id, user_id),
+                "SELECT user_id FROM tj_conversations WHERE id = %s",
+                (conv_id,),
             )
-            if cursor.fetchone():
-                return conv_id  # 已存在，直接返回
+            row = cursor.fetchone()
+            if row is not None:
+                if row["user_id"] != user_id:
+                    raise PermissionError("会话不存在或无权访问")
+                return conv_id
 
-        # 不存在则创建
-        ConversationService.create(user_id, title)
+            cursor.execute(
+                "INSERT INTO tj_conversations (id, user_id, title) VALUES (%s, %s, %s)",
+                (conv_id, user_id, title),
+            )
         return conv_id
 
     @staticmethod
@@ -104,13 +110,14 @@ class MessageService:
     """消息管理"""
 
     @staticmethod
-    def save(conversation_id: str, role: str, content: str) -> str:
+    def save(conversation_id: str, role: str, content: str, reasoning: str = "") -> str:
         """保存一条消息，返回消息 ID"""
         msg_id = uuid.uuid4().hex
+        reasoning_value = reasoning if reasoning else None
         with get_cursor(commit=True) as cursor:
             cursor.execute(
-                "INSERT INTO tj_messages (id, conversation_id, role, content) VALUES (%s, %s, %s, %s)",
-                (msg_id, conversation_id, role, content),
+                "INSERT INTO tj_messages (id, conversation_id, role, content, reasoning) VALUES (%s, %s, %s, %s, %s)",
+                (msg_id, conversation_id, role, content, reasoning_value),
             )
         return msg_id
 
@@ -131,7 +138,7 @@ class MessageService:
 
             cursor.execute(
                 """
-                SELECT id, role, content, created_at
+                SELECT id, role, content, reasoning, created_at
                 FROM tj_messages
                 WHERE conversation_id = %s
                 ORDER BY created_at DESC
@@ -148,6 +155,7 @@ class MessageService:
                 id=row["id"],
                 role=row["role"],
                 content=row["content"],
+                reasoning=row.get("reasoning") or None,
                 created_at=row["created_at"],
             )
             for row in rows

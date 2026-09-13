@@ -7,6 +7,8 @@
 3. system 消息始终保留
 4. 支持流式/非流式输出
 5. 用 OpenAI 原生客户端（非 langchain），支持 DeepSeek reasoning_content 透传
+   （仅 thinking=True 时透传；部分推理模型无视 enable_thinking 开关，
+    thinking=False 时后端强制丢弃思考内容）
 """
 
 import json
@@ -20,6 +22,7 @@ from openai import OpenAI
 from app.core.config import settings
 from app.schemas.chat import Message
 from app.services.conversation_service import MessageService
+from app.services.model_service import ModelService
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +32,19 @@ logger = logging.getLogger(__name__)
 _client_cache: dict = {}
 
 
-def _get_openai_client() -> OpenAI:
-    """获取缓存的 OpenAI 客户端（httpx 连接池自动管理并发）"""
-    key = (settings.SILICON_FLOW_URL, settings.SILICON_FLOW_API_KEY)
+def _get_openai_client(api_key: str | None = None) -> OpenAI:
+    """获取缓存的 OpenAI 客户端（按 base_url + api_key 缓存）
+
+    api_key 来自 tj_models 表该模型自己的配置；
+    为空则回退后端全局的 SILICON_FLOW_API_KEY。
+    """
+    effective_key = api_key or settings.SILICON_FLOW_API_KEY
+    key = (settings.SILICON_FLOW_URL, effective_key)
     if key not in _client_cache:
         base_url = settings.SILICON_FLOW_URL.removesuffix("/chat/completions")
         _client_cache[key] = OpenAI(
             base_url=base_url,
-            api_key=settings.SILICON_FLOW_API_KEY or "not-needed",
+            api_key=effective_key or "not-needed",
         )
     return _client_cache[key]
 
@@ -172,8 +180,13 @@ def chat_v2_stream(
         thinking: 是否开启深度思考模式
     """
     full_text = ""
+    full_reasoning = ""
     model_name = model or settings.DEFAULT_MODEL
-    client = _get_openai_client()
+
+    # 从 tj_models 取该模型专属的 api_key（查不到/为空则用全局配置）
+    model_cfg = ModelService.get_model(model) if model else None
+    model_api_key = (model_cfg or {}).get("api_key") or None
+    client = _get_openai_client(model_api_key)
 
     logger.info(
         "[chat_v2_stream] conversation=%s model=%s thinking=%s → 开始流式调用 LLM",
@@ -205,12 +218,18 @@ def chat_v2_stream(
             reasoning = getattr(delta, "reasoning_content", None) or ""
             content = delta.content or ""
 
+            # thinking=False 时丢弃思考内容
+            # （部分推理模型无视 enable_thinking 开关，仍输出 reasoning_content）
+            if not thinking:
+                reasoning = ""
+
             if not reasoning and not content:
                 continue
 
             delta_dict: dict = {}
             if reasoning:
                 delta_dict["reasoning_content"] = reasoning
+                full_reasoning += reasoning
             if content:
                 full_text += content
                 delta_dict["content"] = content
@@ -228,7 +247,7 @@ def chat_v2_stream(
     # DB 落库
     if full_text:
         try:
-            MessageService.save(conversation_id, role="assistant", content=full_text)
+            MessageService.save(conversation_id, role="assistant", content=full_text, reasoning=full_reasoning)
         except Exception as e:  # noqa: BLE001
             logger.exception("[chat_v2_stream] 保存 assistant 消息失败: %s", e)
 

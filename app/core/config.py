@@ -12,10 +12,6 @@ _ENV_FILE = _PROJECT_ROOT / f".env.{_APP_ENV}"
 
 
 class Settings(BaseSettings):
-    APP_ENV: str = "development"
-
-
-class Settings(BaseSettings):
     PROJECT_NAME: str = "AIGC Core Server"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
@@ -50,12 +46,12 @@ class Settings(BaseSettings):
     SILICON_FLOW_URL: str = "https://api.siliconflow.cn/v1/chat/completions"
     SILICON_FLOW_EMBEDDING_URL: str = "https://api.siliconflow.cn/v1/embeddings"
     SILICON_FLOW_RERANK_URL: str = "https://api.siliconflow.cn/v1/rerank"
-    DEFAULT_MODEL: str = "deepseek-ai/DeepSeek-V4-Flash"
+    DEFAULT_MODEL: str = ""
     DEFAULT_MAX_TOKENS: int = 8192  # LLM 最大输出 token 数（思考模式下推理 token 也从中扣除）
     DEFAULT_EMBEDDING_MODEL: str = "BAAI/bge-m3"
     DEFAULT_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
     # 如需要固定 API Key（不依赖请求头传入），可在这里配置
-    SILICON_FLOW_API_KEY: str = "sk-lbaejguljpqjckzkqtaybqnjxzzjizfqyijkxfwatbxrglnv"
+    SILICON_FLOW_API_KEY: str = ""
 
     # ===== Milvus 配置 =====
     MILVUS_HOST: str = "106.14.181.222"

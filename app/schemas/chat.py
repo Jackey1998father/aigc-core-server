@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Message(BaseModel):
@@ -47,9 +47,12 @@ class ChatV2Request(BaseModel):
         description="会话 ID",
     )
     message: str = Field(
-        ...,
-        description="当前用户消息",
-        min_length=1,
+        default="",
+        description="当前用户消息（纯图片输入时可空）",
+    )
+    images: List[str] = Field(
+        default_factory=list,
+        description="图片列表（data URL 或 http(s) 公网 URL），用于视觉模型",
     )
     model: Optional[str] = Field(
         default=None,
@@ -65,6 +68,12 @@ class ChatV2Request(BaseModel):
         default=False,
         description="是否开启深度思考模式（传给上游 LLM）",
     )
+
+    @model_validator(mode="after")
+    def _require_content(self):
+        if not self.message.strip() and not self.images:
+            raise ValueError("message 与 images 至少需要提供一个")
+        return self
 
 
 class ChatResponse(BaseModel):

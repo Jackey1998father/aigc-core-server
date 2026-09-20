@@ -7,6 +7,7 @@ from typing import List
 import httpx
 
 from app.core.config import settings
+from app.services.model_service import ModelService
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,12 @@ class EmbeddingService:
 
         model = model or settings.DEFAULT_EMBEDDING_MODEL
         url = settings.SILICON_FLOW_EMBEDDING_URL
+        # 优先用 tj_models 表里该 embedding 模型配置的 api_key，为空回退全局
+        api_key = ModelService.resolve_api_key(model, model_type="embedding")
+        if not api_key:
+            raise ValueError("未配置 embedding API Key（tj_models 与全局 SILICON_FLOW_API_KEY 均为空）")
         headers = {
-            "Authorization": f"Bearer {settings.SILICON_FLOW_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         payload = {

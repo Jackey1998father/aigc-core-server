@@ -19,6 +19,7 @@ from pymilvus import AnnSearchRequest, WeightedRanker
 
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
+from app.services.model_service import ModelService
 from app.services.rag_graph.state import RAGState
 from app.store.milvus_client import milvus_client
 from app.utils.db import get_cursor
@@ -40,14 +41,17 @@ def _rerank(query: str, documents: List[str], top_n: int = 5) -> List[Dict[str, 
     if not documents:
         return []
 
+    model = settings.DEFAULT_RERANK_MODEL
+    # 优先用 tj_models 表里该 rerank 模型配置的 api_key，为空回退全局
+    api_key = ModelService.resolve_api_key(model, model_type="rerank")
     payload = {
-        "model": settings.DEFAULT_RERANK_MODEL,
+        "model": model,
         "query": query,
         "documents": documents,
         "top_n": min(top_n, len(documents)),
     }
     headers = {
-        "Authorization": f"Bearer {settings.SILICON_FLOW_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 

@@ -60,6 +60,10 @@ class DocumentService:
         file_data = file.file.read()
         file_size = len(file_data)
 
+        # 限制单文件大小不超过 2MB（前端已有提示，这里兜底防止绕过前端直接调接口）
+        if file_size > 2 * 1024 * 1024:
+            raise ValueError("文件大小不能超过 2MB")
+
         # 3. 上传到 RustFS
         doc_id = uuid.uuid4().hex
         stored_name = f"{doc_id}.{ext}"

@@ -97,6 +97,20 @@ class ModelService:
         return resolved == default_id
 
     @staticmethod
+    def resolve_api_key(model_id: Optional[str], model_type: str = "chat") -> str:
+        """取某模型在 tj_models 里配置的 api_key，为空则回退全局 SILICON_FLOW_API_KEY
+
+        用于 embedding / rerank / chat 等所有需要调上游模型的场景，
+        避免只读全局 key 导致空 key 时拼出非法的 "Bearer " 头。
+        """
+        if model_id:
+            cfg = ModelService.get_model(model_id, model_type)
+            key = (cfg or {}).get("api_key") or None
+            if key:
+                return key
+        return settings.SILICON_FLOW_API_KEY
+
+    @staticmethod
     def refresh() -> None:
         """强制刷新缓存（校验失败时兜底重查一次，让新配的模型立即可用）"""
         _load_rows(force=True)

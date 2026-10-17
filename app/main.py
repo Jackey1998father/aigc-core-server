@@ -3,6 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.logger import setup_logging
+
+# 启动即配置根日志，否则各模块 logger.info 不输出（默认 WARNING 且无 handler）
+setup_logging()
 
 
 def create_app() -> FastAPI:

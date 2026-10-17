@@ -112,11 +112,15 @@ def retrieval_node(state: RAGState) -> RAGState:
     # 3. 混合召回（稠密 0.6 + BM25 0.4，按 doc_id 权限过滤）
     try:
         milvus_filter = f'biz_id in {json.dumps(doc_ids)}'
+        # 注意：pymilvus 的 MilvusClient.hybrid_search() 没有 filter 参数，
+        # 过滤条件必须放到每个 AnnSearchRequest 的 expr 上，否则会被静默忽略，
+        # 导致在全库召回（泄出他人文档）。
         dense_req = AnnSearchRequest(
             data=[query_vec],
             anns_field="vector",
             param={"metric_type": "COSINE"},
             limit=20,
+            expr=milvus_filter,
         )
         # BM25 Function 产出的字段名是 text_sparse
         sparse_req = AnnSearchRequest(
@@ -124,13 +128,13 @@ def retrieval_node(state: RAGState) -> RAGState:
             anns_field="text_sparse",
             param={"metric_type": "BM25"},
             limit=20,
+            expr=milvus_filter,
         )
         search_res = milvus_client.hybrid_search(
             collection_name=settings.MILVUS_BGE_COLLECTION,
             reqs=[dense_req, sparse_req],
             ranker=WeightedRanker(0.6, 0.4),
             limit=20,
-            filter=milvus_filter,
             output_fields=["chunk_id", "text", "biz_id", "index_id"],
         )
     except Exception as e:
@@ -178,6 +182,18 @@ def retrieval_node(state: RAGState) -> RAGState:
     if not top_children:
         top_children = child_matches[:5]
 
+    # 打印混合检索 top5 召回内容（每段前 300 字），便于排查召回质量
+    # for rank, c in enumerate(top_children, start=1):
+    #     preview = (c.get("text") or "").replace("\n", " ")[:300]
+    #     logger.info(
+    #         "[rag.retrieval.top5] #%d biz_id=%s score=%.4f rerank=%.4f | %s",
+    #         rank,
+    #         c.get("biz_id", ""),
+    #         c.get("score", 0.0),
+    #         c.get("rerank_score", 0.0),
+    #         preview,
+    #     )
+
     # 6. 反推父块 index_id（splitter: parent.index_id = 1000 * (idx+1)）
     parent_index_ids = {int(c["index_id"] // 1000) * 1000 for c in top_children}
 
@@ -185,7 +201,7 @@ def retrieval_node(state: RAGState) -> RAGState:
     try:
         parent_res = milvus_client.query(
             collection_name=settings.MILVUS_PARENT_COLLECTION,
-            filter=f"index_id in {json.dumps(list(parent_index_ids))}",
+            filter=f"biz_id in {json.dumps(doc_ids)} and index_id in {json.dumps(list(parent_index_ids))}",
             output_fields=["chunk_id", "text", "biz_id", "index_id"],
         )
     except Exception as e:
@@ -203,6 +219,18 @@ def retrieval_node(state: RAGState) -> RAGState:
         if parent and parent.get("chunk_id") not in seen:
             parents.append(parent)
             seen.add(parent.get("chunk_id"))
+
+    # 按文档去重：同一文档（biz_id）只保留最相关的一个父块，
+    # 避免「参考资料 1..5 全是同一个文件」导致来源卡片重复。
+    deduped: List[Dict[str, Any]] = []
+    seen_biz: set = set()
+    for parent in parents:
+        biz = parent.get("biz_id")
+        if biz in seen_biz:
+            continue
+        seen_biz.add(biz)
+        deduped.append(parent)
+    parents = deduped
 
     # 8. 拼 context
     if parents:

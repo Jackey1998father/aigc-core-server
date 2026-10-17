@@ -24,8 +24,8 @@ from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
 from app.store.milvus_client import milvus_client
 
-from app.tasks.parsers import parse_by_type
-from app.tasks.splitter import basic_custom_splitter, SplitterConfig
+from app.tasks.parsers import parse_by_type, read_csv_rows
+from app.tasks.splitter import basic_custom_splitter, SplitterConfig, csv_row_splitter
 from app.utils.db import get_cursor
 from app.utils.minio_client import get_file
 
@@ -113,10 +113,10 @@ def chunk_and_vectorize(self, doc_id: str):
 # ==================== 内部函数 ====================
 
 def _chunk_document(doc_id: str):
-    """从 DB 读 content_text，调 basic_custom_splitter 切分"""
+    """从 DB 读 content_text，切分（CSV 按行切分，其余按通用 parent-child 切分）"""
     with get_cursor() as cursor:
         cursor.execute(
-            "SELECT id, content_text, file_name FROM tj_documents WHERE id = %s",
+            "SELECT id, content_text, file_name, file_type, minio_path FROM tj_documents WHERE id = %s",
             (doc_id,),
         )
         row = cursor.fetchone()
@@ -125,6 +125,8 @@ def _chunk_document(doc_id: str):
 
     content_text = row["content_text"] or ""
     file_name = row["file_name"]
+    file_type = (row["file_type"] or "").lower()
+    minio_path = row["minio_path"]
     if not content_text:
         logger.warning("[chunk_and_vectorize] content_text 为空 doc_id=%s", doc_id)
 
@@ -132,6 +134,25 @@ def _chunk_document(doc_id: str):
     biz_id = doc_id
 
     config = SplitterConfig()
+
+    # CSV/表格：按行切分，避免把一行拆散到多个 chunk。
+    # 重新读原始文件更可靠（csv.reader 能正确处理带引号的多行单元格）；文件缺失时回退通用切分。
+    if file_type == "csv":
+        file_bytes = get_file(minio_path)
+        if file_bytes is not None:
+            header, rows = read_csv_rows(file_bytes)
+            result = csv_row_splitter(
+                biz_id=biz_id, header=header, rows=rows, data_name=file_name
+            )
+            logger.info(
+                "[chunk_and_vectorize] CSV 按行切分 doc_id=%s rows=%d",
+                doc_id, len(rows),
+            )
+            return doc_id, result
+        logger.warning(
+            "[chunk_and_vectorize] CSV 原始文件缺失，回退通用切分 doc_id=%s", doc_id
+        )
+
     result = basic_custom_splitter(
         biz_id=biz_id,
         document_context=content_text,

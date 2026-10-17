@@ -144,3 +144,54 @@ def basic_custom_splitter(
         parent_chunks=parent_chunks,
         child_chunks=child_chunks_list,
     )
+
+
+def csv_row_splitter(
+    biz_id: str,
+    header: List[str],
+    rows: List[List[str]],
+    data_name: Optional[str] = None,
+) -> ParentChildSplitterChunk:
+    """
+    CSV/表格按行切分：每一行作为一个独立的 parent+child chunk。
+
+    与 basic_custom_splitter 的区别：
+        - 表格数据不能被按字符打断，改为「一行一行」切分；
+        - 每个 chunk 自包含（前置表头 + 该行数据），LLM 能看懂列含义；
+        - parent 与 child 内容一致（类似 RAPTOR 模式），检索按 child 召回、返回 parent 原文。
+
+    每个 chunk 的 metadata：
+        biz_id / chunk_id / index_id(1000*(idx+1)) / chunk_type="parent" / created_at
+    """
+    if not header or not rows:
+        return ParentChildSplitterChunk(parent_chunks=[], child_chunks=[])
+
+    parent_chunks: List[Document] = []
+    chunk_ids = generate_unique_uuids(len(rows))
+    base_timestamp = int(datetime.now().timestamp() * 1000)
+
+    header_md = "| " + " | ".join(str(c) if c is not None else "" for c in header) + " |"
+    separator_md = "| " + " | ".join(["---"] * len(header)) + " |"
+
+    for idx, row in enumerate(rows):
+        # 补齐/截断列数，与表头对齐
+        padded = list(row) + [""] * (len(header) - len(row))
+        row_md = "| " + " | ".join(
+            str(c) if c is not None else "" for c in padded[:len(header)]
+        ) + " |"
+
+        doc = Document(page_content=f"{header_md}\n{separator_md}\n{row_md}")
+        _prepend_filename(doc, data_name)
+        doc.metadata = {
+            "biz_id": biz_id,
+            "chunk_id": chunk_ids[idx],
+            "index_id": 1000 * (idx + 1),
+            "created_at": base_timestamp + idx,
+            "chunk_type": "parent",
+        }
+        parent_chunks.append(doc)
+
+    return ParentChildSplitterChunk(
+        parent_chunks=parent_chunks,
+        child_chunks=deepcopy(parent_chunks),
+    )

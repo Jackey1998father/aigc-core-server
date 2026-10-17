@@ -95,21 +95,33 @@ def _parse_xlsx(file_bytes: bytes) -> str:
     return "\n\n".join(sheets_md)
 
 
+def read_csv_rows(file_bytes: bytes) -> tuple[list[str], list[list[str]]]:
+    """
+    读取 CSV 原始行，返回 (表头, 数据行列表)。
+
+    跳过完全空白的行；空文件返回 ([], [])。
+    """
+    text = file_bytes.decode("utf-8", errors="ignore")
+    reader = csv.reader(StringIO(text))
+    rows = [row for row in reader if any(cell.strip() for cell in row)]
+    if not rows:
+        return [], []
+    return rows[0], rows[1:]
+
+
 def _parse_csv(file_bytes: bytes) -> str:
     """
     CSV → Markdown 表格
     """
-    text = file_bytes.decode("utf-8", errors="ignore")
-    reader = csv.reader(StringIO(text))
-    rows = list(reader)
-    if not rows:
+    header, rows = read_csv_rows(file_bytes)
+    if not header:
         return ""
 
-    lines = []
-    header = rows[0]
-    lines.append("| " + " | ".join(header) + " |")
-    lines.append("| " + " | ".join(["---"] * len(header)) + " |")
-    for row in rows[1:]:
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(header)) + " |",
+    ]
+    for row in rows:
         # 补齐列数
         padded = row + [""] * (len(header) - len(row))
         lines.append("| " + " | ".join(padded[:len(header)]) + " |")

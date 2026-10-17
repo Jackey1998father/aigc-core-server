@@ -76,6 +76,17 @@ def _mk_chunk(delta: dict, model_name: str, finish_reason=None) -> str:
     }, ensure_ascii=False)}\n\n"
 
 
+def _extract_source_title(text: str) -> str:
+    """从 chunk 文本开头提取文件名（格式：「文件名：xxx」）。"""
+    if not text:
+        return ""
+    first_line = text.lstrip().split("\n", 1)[0].strip()
+    prefix = "文件名："
+    if first_line.startswith(prefix):
+        return first_line[len(prefix):].strip()
+    return first_line
+
+
 def answer_node(state: RAGState) -> RAGState:
     """
     1. 拼装 prompt（普通/增强共用）
@@ -139,6 +150,16 @@ def answer_node(state: RAGState) -> RAGState:
 
     # role chunk
     _emit(_mk_chunk({"role": "assistant"}, model_name))
+
+    # 检索来源（父块优先，与 context 的「参考资料 N」顺序一致）→ 以 SSE chunk 回传前端展示
+    parents = state.get("parent_chunks") or []
+    source_items = parents if parents else (state.get("reranked_matches") or [])
+    sources = []
+    for i, item in enumerate(source_items):
+        text = item.get("text", "") if isinstance(item, dict) else ""
+        sources.append({"index": i + 1, "title": _extract_source_title(text)})
+    if sources:
+        _emit(_mk_chunk({"sources": sources}, model_name))
 
     full_text = ""
     full_reasoning = ""
